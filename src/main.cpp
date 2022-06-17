@@ -2,10 +2,12 @@
 // REQUIRES the following Arduino libraries:
 // - DHT Sensor Library: https://github.com/adafruit/DHT-sensor-library
 // - Adafruit Unified Sensor Lib: https://github.com/adafruit/Adafruit_Sensor
-
+// #include <NTPClient.h>
 #include "DHT.h"
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <ArduinoJson.h>
+// #include <WiFiUdp.h>
 
 #define DHTPIN 15 // Digital pin connected to the DHT sensor
 // Feather HUZZAH ESP8266 note: use pins 3, 4, 5, 12, 13 or 14 --
@@ -13,6 +15,7 @@
 
 #define TOPIC_PUBLISH_TEMPERATURE "topic_sensor_temperature"
 #define TOPIC_PUBLISH_HUMIDITY "topic_sensor_humidity"
+#define JSON "json"
 
 #define PUBLISH_DELAY 2000
 
@@ -65,6 +68,9 @@ void callbackMQTT(char *topic, byte *payload, unsigned int length);
 void reconnectMQTT(void);
 void reconnectWiFi(void);
 void checkWiFIAndMQTT(void);
+
+// WiFiUDP ntpUDP;
+// NTPClient timeClient(ntpUDP);
 
 /* Takes temperature reading (DHT22 sensor) Return: temperature (degrees Celsius) */
 float getTemperature(void)
@@ -161,6 +167,7 @@ void setup()
   Serial.begin(9600);
   Serial.println(F("DHTxx test!"));
 
+  // timeClient.begin();
   dht.begin();
 
   // Initializes Wi-Fi connection
@@ -172,6 +179,9 @@ void setup()
 
 void loop()
 {
+  // timeClient.update();
+  DynamicJsonDocument doc(1024);
+  JsonObject obj = doc.as<JsonObject>();
 
   if ((millis() - publishUpdate) >= PUBLISH_DELAY)
   {
@@ -180,13 +190,21 @@ void loop()
     checkWiFIAndMQTT();
 
     // Formata as strings a serem enviadas para o dashboard (campos texto)
-    sprintf(strTemperature, "%.2fC", getTemperature());
+    sprintf(strTemperature, "%.2f", getTemperature());
     sprintf(strHumidity, "%.2f", getHumidity());
 
+    doc["sensor"] = "DHT11";
+    // doc["time"] = timeClient.getFormattedTime();
+    doc["temperature"] = getTemperature();
+    doc["humidity"] = getHumidity();
+
+    char buffer[1024];
+    serializeJson(doc, buffer);
     // Envia as strings ao dashboard MQTT
     MQTT.publish(TOPIC_PUBLISH_TEMPERATURE, strTemperature);
     MQTT.publish(TOPIC_PUBLISH_HUMIDITY, strHumidity);
-    Serial.println(strTemperature);
+    MQTT.publish(JSON, buffer);
+
     // Keep-alive da comunicação com broker MQTT
     MQTT.loop();
   }
