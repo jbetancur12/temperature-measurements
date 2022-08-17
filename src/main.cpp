@@ -17,7 +17,8 @@
 #define TOPIC_PUBLISH_HUMIDITY "topic_sensor_humidity"
 #define JSON "json"
 
-#define PUBLISH_DELAY 2000
+#define PUBLISH_DELAY 10000
+
 
 #define ID_MQTT "esp32_mqtt"
 
@@ -30,16 +31,20 @@ const char *SSID = "Betancur";         // SSID / nome da rede WI-FI que deseja s
 const char *PASSWORD = "betancur1088"; // Senha da rede WI-FI que deseja se conectar
 
 // URL do broker MQTT que se deseja utilizar
-const char *BROKER_MQTT = "rf09deee.us-east-1.emqx.cloud";
-const char *mqtt_username = "jbetancur12";
-const char *mqtt_password = "jorge900";
+const char *BROKER_MQTT = "192.168.0.6";
+const char *mqtt_username = "";
+const char *mqtt_password = "";
 
-int BROKER_PORT = 15155; // Porta do Broker MQTT
+int BROKER_PORT = 1883; // Porta do Broker MQTT
 
 unsigned long publishUpdate;
+float lastTemperature = 0;
+float lastHumidity = 0;
+float lastHeat = 0;
 
 static char strTemperature[10] = {0};
 static char strHumidity[10] = {0};
+static char strHeat[10] = {0};
 
 // Variáveis e objetos globais
 WiFiClient espClient;         // Cria o objeto espClient
@@ -61,6 +66,7 @@ DHT dht(DHTPIN, DHTTYPE);
 /* Prototypes */
 float getTemperature(void);
 float getHumidity(void);
+float getHeat(float t, float h);
 
 void initWiFi(void);
 void initMQTT(void);
@@ -78,9 +84,12 @@ float getTemperature(void)
   float data = dht.readTemperature();
 
   if (!(isnan(data)))
+  {
+    lastTemperature = data;
     return data;
+  }
   else
-    return -99.99;
+    return lastTemperature;
 }
 
 /* Reads relative humidity (DHT22 sensor) Return: humidity (0 - 100%) */
@@ -89,9 +98,25 @@ float getHumidity(void)
   float data = dht.readHumidity();
 
   if (!(isnan(data)))
+  {
+    lastHumidity = data;
     return data;
+  }
   else
-    return -99.99;
+    return lastHumidity;
+}
+
+float getHeat(float t, float h)
+{
+  float data = dht.computeHeatIndex(t, h, false);
+
+  if (!(isnan(data)))
+  {
+    lastHeat = data;
+    return data;
+  }
+  else
+    return lastHeat;
 }
 
 /* Initializes and connects to the desired WI-FI network */
@@ -112,7 +137,7 @@ void initMQTT(void)
   MQTT.setServer(BROKER_MQTT, BROKER_PORT); // Informa qual broker e porta deve ser conectado
 }
 
-/* Reconnects to the MQTT broker (if not already connected or in case of connection drop) in case of successful connection or reconnection, the thread subscription is remade. */
+/* Reconnects to the MQTT broker (if not already connected or in case of connection d rop) in case of successful connection or reconnection, the thread subscription is remade. */
 void reconnectMQTT(void)
 {
   while (!MQTT.connected())
@@ -160,6 +185,7 @@ void reconnectWiFi(void)
   Serial.print(SSID);
   Serial.println("IP obtained: ");
   Serial.println(WiFi.localIP());
+  Serial.println(WiFi.macAddress());
 }
 
 void setup()
@@ -172,6 +198,7 @@ void setup()
 
   // Initializes Wi-Fi connection
   initWiFi();
+  
 
   // Initialize connection to MQTT broker
   initMQTT();
@@ -189,14 +216,20 @@ void loop()
     // Verifica o funcionamento das conexões WiFi e ao broker MQTT
     checkWiFIAndMQTT();
 
+    float t = getTemperature();
+    float h = getHumidity();
+
     // Formata as strings a serem enviadas para o dashboard (campos texto)
-    sprintf(strTemperature, "%.2f", getTemperature());
-    sprintf(strHumidity, "%.2f", getHumidity());
+    sprintf(strTemperature, "%.2f",t);
+    sprintf(strHumidity, "%.2f", h);
+    sprintf(strHeat, "%.2f", getHeat(t,h));
 
     doc["sensor"] = "DHT11";
     // doc["time"] = timeClient.getFormattedTime();
     doc["temperature"] = getTemperature();
     doc["humidity"] = getHumidity();
+    doc["heat"] = getHeat(t,h);
+    doc["mac"]= WiFi.macAddress();
 
     char buffer[1024];
     serializeJson(doc, buffer);
